@@ -1,0 +1,23 @@
+SELECT * FROM actor
+actors
+100
+
+SELECT * FROM address
+addresses
+100
+
+SELECT * FROM category
+categories
+100
+
+SELECT * FROM city
+cities
+100
+
+SELECT * FROM country
+countries
+100
+
+SELECT * FROM film
+films
+100
