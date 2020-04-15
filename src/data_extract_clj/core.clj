@@ -1,11 +1,11 @@
 (ns data-extract-clj.core
   (:gen-class)
+  (:import (java.sql SQLException))
   (:require [clojure.java.jdbc :as jdbc]
             [clojure.tools.cli :as cli]
             [cheshire.core :as cheshire]
             [clojure.string :as str]
             [dk.ative.docjure.spreadsheet :as dk]
-            [clojure.core.async :as async :refer [>!! <!! chan thread]]
             [clojure.java.io :as io]))
 
 (defn load-queries
@@ -15,20 +15,24 @@
        (map (fn [[query title lim]] [query title (Integer/parseInt lim)]))
        (remove empty?)))
 
+(defn run-query
+  [db-conn query]
+  (jdbc/query db-conn [query] {:keywordize? false
+                               :as-arrays?  true
+                               :row-fn (fn [row] (doall (map str row)))}))
+
 (defn write-result
   [result title lim out-folder]
   (loop [heading (first result)
          result (rest result)
          n 1]
     (if (empty? result) nil
-                        (let [wb (dk/create-workbook title (cons heading (take lim result)))]
-                         (dk/save-workbook! (str out-folder "/" title "-" n ".xlsx") wb)
-                         (recur heading (drop lim result) (inc n))))))
+        (let [wb (dk/create-workbook title (cons heading (take lim result)))]
+          (dk/save-workbook! (str out-folder "/" title "-" n ".xlsx") wb)
+          (recur heading (drop lim result) (inc n))))))
 
 (def cli-opts
-  [["-n" "--max-calls MAX" "Max number of parallel db calls"
-    :default 3]
-   ["-o" "--output FOLDER" "Output Folder"
+  [["-o" "--output FOLDER" "Output Folder"
     :default "output"]
    ["-h" "--help"]])
 
@@ -63,17 +67,13 @@
   (let [{:keys [in-file connection options exit-message ok?]} (validate-args args)]
     (if exit-message
       (exit (if ok? 0 1) exit-message)
-    (let [db (cheshire/parse-string (slurp connection) true)
-          queries (load-queries in-file)
-          n (count queries)
-          {:keys [max-calls output]} options
-          result-chan (chan max-calls)]
-      (doseq [[query title lim] queries]
-            (thread (>!! result-chan [(jdbc/query db [query] {:keywordize? false
-                                                              :as-arrays?  true
-                                                              :result-set-fn (fn [rs]
-                                                                               (doall (map #(map str %) rs)))})
-                                      title lim output])))
-      (if (not (.isDirectory (io/file output))) (.mkdir (io/file output)))
-      (dotimes [_ n]
-            (apply write-result (<!! result-chan)))))))
+      (let [db-spec (cheshire/parse-string (slurp connection) true)
+            queries (load-queries in-file)
+            n (count queries)
+            {:keys [output]} options]
+        (if (not (.isDirectory (io/file output))) (.mkdir (io/file output)))
+        (try (jdbc/with-db-connection [db-conn db-spec]
+               (doseq [[query title lim] queries]
+                 (write-result (run-query db-conn query)
+                               title lim output)))
+             (catch SQLException e (exit 1 (.getMessage e))))))))

@@ -5,7 +5,6 @@
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [org.clojure/tools.cli "1.0.194"]
                  [org.clojure/java.jdbc "0.7.11"]
-                 [org.clojure/core.async "1.0.567"]
                  [cheshire "5.10.0"]
                  [dk.ative/docjure "1.12.0"]
                  [org.postgresql/postgresql "42.2.11"]
